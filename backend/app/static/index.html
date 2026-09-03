@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DepViz — Monorepo Dependency Visualizer</title>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            zinc: { 950: '#09090b' }
+          }
+        }
+      }
+    };
+  </script>
+
+  <!-- D3.js v7 CDN -->
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+
+  <style>
+    body { background-color: #09090b; }
+
+    /* Custom file input overlay */
+    .file-input-wrapper {
+      position: relative;
+      overflow: hidden;
+      display: block;
+    }
+    .file-input-wrapper input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+      width: 100%;
+      height: 100%;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .spinner {
+      animation: spin 0.9s linear infinite;
+    }
+
+    /* Drop zone highlight */
+    .drop-zone.drag-over {
+      border-color: #a855f7 !important;
+      background-color: rgba(168, 85, 247, 0.06);
+    }
+
+    /* Upload card glow */
+    .upload-card {
+      box-shadow: 0 0 0 1px rgba(168,85,247,0.12), 0 8px 40px rgba(0,0,0,0.5);
+      transition: box-shadow 0.3s ease;
+    }
+    .upload-card:hover {
+      box-shadow: 0 0 0 1px rgba(168,85,247,0.28), 0 8px 48px rgba(168,85,247,0.07);
+    }
+  </style>
+</head>
+
+<body class="min-h-screen text-gray-100 flex flex-col">
+
+  <!-- ===== HEADER ===== -->
+  <header class="border-b border-zinc-800/60 bg-zinc-950/80 backdrop-blur-sm sticky top-0 z-50">
+    <div class="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-lg bg-purple-600 flex items-center justify-center flex-shrink-0">
+          <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+          </svg>
+        </div>
+        <div class="leading-none">
+          <span class="text-lg font-bold text-white">Dep</span><span class="text-lg font-bold text-purple-400">Viz</span>
+          <p class="text-xs text-zinc-600 tracking-widest uppercase mt-0.5">Monorepo Dependency Visualizer</p>
+        </div>
+      </div>
+      <span class="text-xs text-zinc-600 font-mono hidden sm:block">npm + pip</span>
+    </div>
+  </header>
+
+  <!-- ===== MAIN ===== -->
+  <main class="flex-1 flex flex-col items-center justify-center px-4 py-16">
+
+    <!-- Hero text -->
+    <div class="text-center mb-12 max-w-2xl">
+      <span class="inline-block bg-purple-900/40 text-purple-400 border border-purple-800/50 text-xs font-semibold tracking-widest uppercase px-3 py-1 rounded-full mb-6">
+        Interactive Graph Analysis
+      </span>
+      <h1 class="text-4xl sm:text-5xl font-bold tracking-tight mb-4 bg-gradient-to-br from-slate-950 via-purple-950 to-slate-950 bg-clip-text">
+        Visualize your monorepo<br />
+        <span class="text-purple-400">dependency graph</span>
+      </h1>
+      <p class="text-gray-400 text-lg leading-relaxed">
+        Upload a ZIP of your repository and explore an interactive graph of package dependencies, circular dependency cycles, and impact radius — instantly.
+      </p>
+    </div>
+
+    <!-- Upload card -->
+    <div class="upload-card w-full max-w-lg bg-zinc-900 border border-zinc-800 rounded-2xl p-8">
+
+      <form id="upload-form" novalidate>
+
+        <!-- Drop zone / file picker -->
+        <div
+          id="drop-zone"
+          class="drop-zone border-2 border-dashed border-zinc-700 rounded-xl p-10 mb-6 text-center cursor-pointer transition-all duration-200 hover:border-purple-700/60"
+        >
+          <div class="file-input-wrapper">
+            <input
+              type="file"
+              id="file-input"
+              accept=".zip"
+              aria-label="Select a ZIP file"
+            />
+            <!-- Visual content inside drop zone -->
+            <div class="pointer-events-none">
+              <div class="w-12 h-12 rounded-xl bg-purple-900/30 border border-purple-700/40 flex items-center justify-center mx-auto mb-4">
+                <svg class="w-6 h-6 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+              </div>
+              <p class="text-gray-300 font-medium mb-1">
+                Drop your repository ZIP here
+              </p>
+              <p class="text-zinc-500 text-sm">or click to browse</p>
+              <p id="file-name-display" class="text-purple-400 text-sm mt-3 hidden font-mono"></p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Error message -->
+        <div
+          id="error-box"
+          class="hidden mb-5 bg-red-900/30 border border-red-800/60 text-red-300 text-sm rounded-xl px-4 py-3 flex items-start gap-3"
+          role="alert"
+        >
+          <svg class="w-4 h-4 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span id="error-text"></span>
+        </div>
+
+        <!-- Submit button -->
+        <button
+          type="submit"
+          id="submit-btn"
+          class="w-full bg-purple-600 hover:bg-purple-500 active:scale-95 hover:scale-[1.01] disabled:bg-zinc-800 disabled:text-zinc-600 disabled:cursor-not-allowed
+                 text-white font-semibold py-3 px-6 rounded-xl
+                 transition-all duration-200 shadow-lg shadow-purple-900/25
+                 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:ring-offset-zinc-900
+                 flex items-center justify-center gap-2.5"
+        >
+          <span id="btn-text">Analyze Repository &rarr;</span>
+          <svg
+            id="btn-spinner"
+            class="spinner hidden w-5 h-5 text-white"
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+          >
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+          </svg>
+        </button>
+
+      </form>
+    </div>
+
+    <!-- Feature pills -->
+    <div class="flex flex-wrap justify-center gap-3 mt-10">
+      <span class="bg-zinc-900 border border-zinc-800 hover:border-zinc-700 text-gray-400 text-sm px-4 py-2 rounded-full flex items-center gap-2 transition-colors duration-200">
+        <span class="w-2 h-2 rounded-full bg-red-500 inline-block"></span>
+        Circular dep detection
+      </span>
+      <span class="bg-zinc-900 border border-zinc-800 hover:border-zinc-700 text-gray-400 text-sm px-4 py-2 rounded-full flex items-center gap-2 transition-colors duration-200">
+        <span class="w-2 h-2 rounded-full bg-purple-500 inline-block"></span>
+        Impact radius analysis
+      </span>
+      <span class="bg-zinc-900 border border-zinc-800 hover:border-zinc-700 text-gray-400 text-sm px-4 py-2 rounded-full flex items-center gap-2 transition-colors duration-200">
+        <span class="w-2 h-2 rounded-full bg-cyan-500 inline-block"></span>
+        Multi-ecosystem (npm + pip)
+      </span>
+      <span class="bg-zinc-900 border border-zinc-800 hover:border-zinc-700 text-gray-400 text-sm px-4 py-2 rounded-full flex items-center gap-2 transition-colors duration-200">
+        <span class="w-2 h-2 rounded-full bg-fuchsia-500 inline-block"></span>
+        Zoom &amp; pan navigation
+      </span>
+      <span class="bg-zinc-900 border border-zinc-800 hover:border-zinc-700 text-gray-400 text-sm px-4 py-2 rounded-full flex items-center gap-2 transition-colors duration-200">
+        <span class="w-2 h-2 rounded-full bg-violet-500 inline-block"></span>
+        Interactive node inspection
+      </span>
+    </div>
+
+  </main>
+
+  <!-- ===== FOOTER ===== -->
+  <footer class="border-t border-zinc-800/60 bg-zinc-900/20 px-6 py-5 text-center text-zinc-600 text-xs">
+    DepViz &mdash; Upload a ZIP, explore your dependency graph.
+  </footer>
+
+  <!-- ===== SCRIPT ===== -->
+  <script>
+    (function () {
+      const form       = document.getElementById('upload-form');
+      const fileInput  = document.getElementById('file-input');
+      const dropZone   = document.getElementById('drop-zone');
+      const fileNameEl = document.getElementById('file-name-display');
+      const errorBox   = document.getElementById('error-box');
+      const errorText  = document.getElementById('error-text');
+      const submitBtn  = document.getElementById('submit-btn');
+      const btnText    = document.getElementById('btn-text');
+      const btnSpinner = document.getElementById('btn-spinner');
+
+      // ---- File selection display ----
+      fileInput.addEventListener('change', () => {
+        const f = fileInput.files[0];
+        if (f) {
+          fileNameEl.textContent = f.name;
+          fileNameEl.classList.remove('hidden');
+          hideError();
+        }
+      });
+
+      // ---- Drag & drop ----
+      dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('drag-over');
+      });
+      dropZone.addEventListener('dragleave', () => {
+        dropZone.classList.remove('drag-over');
+      });
+      dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('drag-over');
+        const dt = e.dataTransfer;
+        if (dt && dt.files.length > 0) {
+          fileInput.files = dt.files;
+          const f = dt.files[0];
+          fileNameEl.textContent = f.name;
+          fileNameEl.classList.remove('hidden');
+          hideError();
+        }
+      });
+
+      // ---- Form submit ----
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        hideError();
+
+        const file = fileInput.files[0];
+        if (!file) {
+          showError('Please select a ZIP file first.');
+          return;
+        }
+        if (!file.name.endsWith('.zip')) {
+          showError('Only .zip files are accepted.');
+          return;
+        }
+
+        setLoading(true);
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+          const res = await fetch('/graphs/analyze', {
+            method: 'POST',
+            body: formData,
+          });
+
+          if (!res.ok) {
+            let detail = 'Analysis failed. The ZIP may be too large or contain no recognisable packages.';
+            try {
+              const err = await res.json();
+              detail = err.detail || detail;
+            } catch (_) {}
+            showError(detail);
+            return;
+          }
+
+          const result = await res.json();
+          localStorage.setItem('depviz-result', JSON.stringify(result));
+          window.location.href = '/graph';
+        } catch (err) {
+          showError('Could not reach the server. Make sure it is running, then try again.');
+        } finally {
+          setLoading(false);
+        }
+      });
+
+      // ---- Helpers ----
+      function showError(msg) {
+        errorText.textContent = msg;
+        errorBox.classList.remove('hidden');
+      }
+      function hideError() {
+        errorBox.classList.add('hidden');
+        errorText.textContent = '';
+      }
+      function setLoading(loading) {
+        submitBtn.disabled = loading;
+        if (loading) {
+          btnText.textContent = 'Analyzing…';
+          btnSpinner.classList.remove('hidden');
+        } else {
+          btnText.innerHTML = 'Analyze Repository &rarr;';
+          btnSpinner.classList.add('hidden');
+        }
+      }
+    })();
+  </script>
+
+</body>
+</html>

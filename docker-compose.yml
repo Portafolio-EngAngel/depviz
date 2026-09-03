@@ -1,0 +1,12 @@
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8004:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      # Mount source for hot-reload during development.
+      # Remove this volume block for a production build.
+      - ./backend:/app
+    restart: unless-stopped

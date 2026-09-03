@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DepViz — Graph</title>
+
+  <!-- D3.js v7 -->
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+
+  <style>
+    /* ===== Reset & base ===== */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #09090b;
+      color: #f9fafb;
+      font-family: ui-sans-serif, system-ui, sans-serif;
+      overflow: hidden;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ===== Header bar ===== */
+    #header {
+      height: 52px;
+      min-height: 52px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 24px;
+      border-bottom: 1px solid rgba(63, 63, 70, 0.6);
+      background: rgba(9, 9, 11, 0.8);
+      backdrop-filter: blur(8px);
+      z-index: 10;
+      flex-shrink: 0;
+    }
+    #header .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    #header .brand-icon {
+      width: 28px;
+      height: 28px;
+      background: #9333ea;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    #header .logo {
+      font-size: 1rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    #header .logo .dep { color: #f9fafb; }
+    #header .logo .viz { color: #c084fc; }
+    #header a.back {
+      color: #52525b;
+      font-size: 0.78rem;
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      transition: color 0.15s;
+      padding: 4px 8px;
+      border-radius: 6px;
+      border: 1px solid transparent;
+    }
+    #header a.back:hover {
+      color: #d1d5db;
+      border-color: rgba(63, 63, 70, 0.8);
+      background: rgba(39, 39, 42, 0.6);
+    }
+
+    /* ===== Stats bar ===== */
+    #stats-bar {
+      height: 44px;
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0 24px;
+      border-bottom: 1px solid rgba(39, 39, 42, 0.8);
+      background: #09090b;
+      flex-shrink: 0;
+      overflow-x: auto;
+    }
+    .stat-pill {
+      background: #18181b;
+      border: 1px solid #27272a;
+      border-radius: 9999px;
+      padding: 3px 12px;
+      font-size: 0.71rem;
+      color: #71717a;
+      white-space: nowrap;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .stat-pill strong { color: #f9fafb; }
+    .stat-pill.warn { border-color: rgba(239, 68, 68, 0.4); }
+    .stat-pill.warn strong { color: #f87171; }
+
+    /* Legend pills */
+    #legend {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-left: auto;
+      flex-shrink: 0;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 0.68rem;
+      color: #52525b;
+    }
+    .legend-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    /* ===== Graph canvas ===== */
+    #graph-container {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+    }
+    svg#graph-svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* SVG element styles */
+    .link {
+      stroke: #27272a;
+      stroke-opacity: 0.8;
+      stroke-width: 1.5;
+      fill: none;
+    }
+    .link.circular {
+      stroke: #ef4444;
+      stroke-opacity: 0.9;
+      stroke-width: 2;
+      stroke-dasharray: 5 3;
+    }
+    .link.highlighted {
+      stroke: #c084fc;
+      stroke-opacity: 1;
+      stroke-width: 2.5;
+    }
+    .node circle {
+      stroke-width: 1.5;
+      cursor: pointer;
+      transition: stroke 0.15s, stroke-width 0.15s, filter 0.15s;
+    }
+    .node circle:hover {
+      filter: brightness(1.35);
+    }
+    .node.selected circle {
+      stroke: #f9fafb;
+      stroke-width: 2.5;
+      filter: brightness(1.25);
+    }
+    .node.dimmed circle {
+      opacity: 0.12;
+    }
+    .node.dimmed text {
+      opacity: 0.08;
+    }
+    .node text {
+      pointer-events: none;
+      font-size: 10px;
+      fill: #a1a1aa;
+      text-anchor: middle;
+      dominant-baseline: middle;
+      user-select: none;
+    }
+
+    /* Arrowhead marker */
+    marker#arrowhead path { fill: #27272a; }
+    marker#arrowhead-circular path { fill: #ef4444; }
+    marker#arrowhead-highlighted path { fill: #c084fc; }
+
+    /* ===== Tooltip ===== */
+    #tooltip {
+      position: absolute;
+      background: #18181b;
+      border: 1px solid #3f3f46;
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-size: 0.75rem;
+      color: #d1d5db;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.15s;
+      z-index: 30;
+      max-width: 240px;
+      line-height: 1.5;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    }
+    #tooltip.visible { opacity: 1; }
+    #tooltip strong { color: #f9fafb; display: block; margin-bottom: 4px; }
+    #tooltip .eco-badge {
+      display: inline-block;
+      border-radius: 5px;
+      padding: 1px 7px;
+      font-size: 0.65rem;
+      font-weight: 600;
+      margin-bottom: 5px;
+    }
+
+    /* ===== Side panel ===== */
+    #side-panel {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      width: 268px;
+      background: #18181b;
+      border: 1px solid #27272a;
+      border-radius: 14px;
+      padding: 16px;
+      z-index: 20;
+      display: none;
+      max-height: calc(100vh - 120px);
+      overflow-y: auto;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.7);
+    }
+    #side-panel.visible { display: block; }
+    #side-panel h3 {
+      font-size: 0.7rem;
+      font-weight: 700;
+      color: #52525b;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    #side-panel h3 button {
+      background: none;
+      border: none;
+      color: #3f3f46;
+      cursor: pointer;
+      font-size: 1rem;
+      line-height: 1;
+      padding: 0 3px;
+      border-radius: 4px;
+    }
+    #side-panel h3 button:hover { color: #71717a; }
+    #side-panel h3 button:focus-visible { outline: 2px solid #c084fc; outline-offset: 2px; }
+    .ctrl-btn:focus-visible { outline: 2px solid #c084fc; outline-offset: 2px; }
+    #panel-node-name {
+      font-size: 1rem;
+      font-weight: 700;
+      color: #f9fafb;
+      word-break: break-all;
+      margin-bottom: 4px;
+    }
+    #panel-eco {
+      font-size: 0.7rem;
+      font-weight: 600;
+      border-radius: 5px;
+      padding: 2px 8px;
+      display: inline-block;
+      margin-bottom: 12px;
+    }
+    .panel-section-label {
+      font-size: 0.67rem;
+      color: #3f3f46;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      margin-top: 12px;
+      margin-bottom: 6px;
+    }
+    .dep-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .dep-list li {
+      font-size: 0.74rem;
+      color: #71717a;
+      background: #27272a;
+      border-radius: 6px;
+      padding: 4px 9px;
+      cursor: pointer;
+      transition: background 0.12s, color 0.12s;
+    }
+    .dep-list li:hover {
+      background: #3f3f46;
+      color: #f1f5f9;
+    }
+    .dep-list li.circular-dep {
+      color: #fca5a5;
+      border-left: 2px solid #ef4444;
+      padding-left: 7px;
+    }
+    .empty-label {
+      font-size: 0.71rem;
+      color: #27272a;
+      font-style: italic;
+    }
+
+    /* ===== Controls (zoom) ===== */
+    #controls {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      z-index: 20;
+    }
+    .ctrl-btn {
+      width: 34px;
+      height: 34px;
+      background: #18181b;
+      border: 1px solid #27272a;
+      border-radius: 9px;
+      color: #71717a;
+      cursor: pointer;
+      font-size: 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.12s, color 0.12s, border-color 0.12s;
+    }
+    .ctrl-btn:hover {
+      background: #27272a;
+      color: #f9fafb;
+      border-color: #3f3f46;
+    }
+
+    /* Scrollbar styling for side panel */
+    #side-panel::-webkit-scrollbar { width: 4px; }
+    #side-panel::-webkit-scrollbar-track { background: transparent; }
+    #side-panel::-webkit-scrollbar-thumb { background: #27272a; border-radius: 2px; }
+  </style>
+</head>
+
+<body>
+
+  <!-- ===== HEADER ===== -->
+  <div id="header">
+    <div class="brand">
+      <div class="brand-icon">
+        <svg width="16" height="16" fill="none" stroke="white" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+        </svg>
+      </div>
+      <span class="logo">
+        <span class="dep">Dep</span><span class="viz">Viz</span>
+      </span>
+    </div>
+    <a class="back" href="/">
+      &#8592; New analysis
+    </a>
+  </div>
+
+  <!-- ===== STATS BAR ===== -->
+  <div id="stats-bar">
+    <div class="stat-pill">
+      Packages <strong id="stat-packages">—</strong>
+    </div>
+    <div class="stat-pill">
+      Edges <strong id="stat-edges">—</strong>
+    </div>
+    <div class="stat-pill" id="stat-circular-pill">
+      Circular deps <strong id="stat-circular">—</strong>
+    </div>
+    <div class="stat-pill">
+      Max depth <strong id="stat-depth">—</strong>
+    </div>
+
+    <!-- Ecosystem legend -->
+    <div id="legend">
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#06b6d4"></div>
+        <span>Internal</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#f59e0b"></div>
+        <span>npm</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#a78bfa"></div>
+        <span>pip</span>
+      </div>
+      <div class="legend-item" style="margin-left:4px">
+        <svg width="22" height="10"><line x1="0" y1="5" x2="22" y2="5" stroke="#ef4444" stroke-width="2" stroke-dasharray="5 3"/></svg>
+        <span>Circular</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== GRAPH CANVAS ===== -->
+  <div id="graph-container">
+    <svg id="graph-svg"></svg>
+
+    <!-- Tooltip -->
+    <div id="tooltip"></div>
+
+    <!-- Side panel -->
+    <div id="side-panel">
+      <h3>
+        Selected Node
+        <button id="close-panel" title="Close panel" aria-label="Close panel">&times;</button>
+      </h3>
+      <div id="panel-node-name">—</div>
+      <span id="panel-eco"></span>
+
+      <div class="panel-section-label">Dependencies (this &rarr; others)</div>
+      <ul class="dep-list" id="panel-deps"></ul>
+
+      <div class="panel-section-label">Dependents (others &rarr; this)</div>
+      <ul class="dep-list" id="panel-dependents"></ul>
+    </div>
+
+    <!-- Zoom controls -->
+    <div id="controls">
+      <button class="ctrl-btn" id="zoom-in" title="Zoom in" aria-label="Zoom in">+</button>
+      <button class="ctrl-btn" id="zoom-out" title="Zoom out" aria-label="Zoom out">&#8722;</button>
+      <button class="ctrl-btn" id="zoom-reset" title="Reset view" aria-label="Reset view">&#8635;</button>
+    </div>
+  </div>
+
+  <!-- ===== D3 VISUALIZATION SCRIPT ===== -->
+  <script>
+  (function () {
+    // -------------------------------------------------------------------------
+    // 1. Load data from localStorage
+    // -------------------------------------------------------------------------
+    const raw = localStorage.getItem('depviz-result');
+    if (!raw) {
+      window.location.href = '/';
+      return;
+    }
+
+    let data;
+    try {
+      data = JSON.parse(raw);
+    } catch (e) {
+      window.location.href = '/';
+      return;
+    }
+
+    const { nodes: rawNodes, edges: rawEdges, circular_deps, stats } = data;
+
+    // -------------------------------------------------------------------------
+    // 2. Populate stats bar
+    // -------------------------------------------------------------------------
+    document.getElementById('stat-packages').textContent = stats.total_packages ?? '—';
+    document.getElementById('stat-edges').textContent    = stats.total_edges    ?? '—';
+    document.getElementById('stat-circular').textContent = stats.circular_count ?? '—';
+    document.getElementById('stat-depth').textContent    =
+      stats.max_depth >= 0 ? stats.max_depth : 'N/A';
+
+    if (stats.circular_count > 0) {
+      document.getElementById('stat-circular-pill').classList.add('warn');
+    }
+
+    // -------------------------------------------------------------------------
+    // 3. Ecosystem colours
+    // -------------------------------------------------------------------------
+    const COLOR = {
+      internal: '#06b6d4',  // cyan-400
+      npm:      '#f59e0b',  // amber-400
+      pip:      '#a78bfa',  // violet-400
+    };
+    function ecoColor(eco) { return COLOR[eco] || COLOR.npm; }
+
+    function ecoStyle(eco) {
+      const styles = {
+        internal: 'background:#083344;color:#22d3ee',
+        npm:      'background:#451a03;color:#fbbf24',
+        pip:      'background:#2e1065;color:#c4b5fd',
+      };
+      return styles[eco] || styles.npm;
+    }
+
+    // -------------------------------------------------------------------------
+    // 4. Build lookup structures
+    // -------------------------------------------------------------------------
+    const nodes = rawNodes.map(n => ({ ...n }));
+    const edges = rawEdges.map(e => ({ ...e }));
+
+    const circularEdgeSet = new Set(
+      edges.filter(e => e.is_circular).map(e => `${e.source}||${e.target}`)
+    );
+
+    const outEdgeMap  = new Map();
+    const inEdgeMap   = new Map();
+    nodes.forEach(n => { outEdgeMap.set(n.id, []); inEdgeMap.set(n.id, []); });
+    edges.forEach(e => {
+      const srcId = typeof e.source === 'object' ? e.source.id : e.source;
+      const tgtId = typeof e.target === 'object' ? e.target.id : e.target;
+      if (outEdgeMap.has(srcId)) outEdgeMap.get(srcId).push(tgtId);
+      else outEdgeMap.set(srcId, [tgtId]);
+      if (inEdgeMap.has(tgtId)) inEdgeMap.get(tgtId).push(srcId);
+      else inEdgeMap.set(tgtId, [srcId]);
+    });
+
+    // -------------------------------------------------------------------------
+    // 5. SVG setup + zoom
+    // -------------------------------------------------------------------------
+    const svgEl   = document.getElementById('graph-svg');
+    const svg     = d3.select(svgEl);
+    const width   = svgEl.clientWidth  || window.innerWidth;
+    const height  = svgEl.clientHeight || (window.innerHeight - 96);
+
+    const defs = svg.append('defs');
+
+    function addMarker(id, color) {
+      defs.append('marker')
+        .attr('id', id)
+        .attr('viewBox', '0 -5 10 10')
+        .attr('refX', 20)
+        .attr('refY', 0)
+        .attr('markerWidth', 6)
+        .attr('markerHeight', 6)
+        .attr('orient', 'auto')
+        .append('path')
+          .attr('d', 'M0,-5L10,0L0,5')
+          .attr('fill', color);
+    }
+    addMarker('arr-normal',      '#27272a');
+    addMarker('arr-circular',    '#ef4444');
+    addMarker('arr-highlighted', '#c084fc');
+
+    const root = svg.append('g').attr('class', 'root');
+
+    const zoomBehavior = d3.zoom()
+      .scaleExtent([0.05, 4])
+      .on('zoom', (event) => {
+        root.attr('transform', event.transform);
+      });
+    svg.call(zoomBehavior);
+
+    document.getElementById('zoom-in').addEventListener('click', () => {
+      svg.transition().duration(250).call(zoomBehavior.scaleBy, 1.4);
+    });
+    document.getElementById('zoom-out').addEventListener('click', () => {
+      svg.transition().duration(250).call(zoomBehavior.scaleBy, 1 / 1.4);
+    });
+    document.getElementById('zoom-reset').addEventListener('click', resetView);
+
+    // -------------------------------------------------------------------------
+    // 6. Force simulation
+    // -------------------------------------------------------------------------
+    const maxCount = d3.max(nodes, d => d.package_count) || 1;
+    const rScale   = d3.scaleSqrt().domain([0, maxCount]).range([6, 22]);
+
+    const simulation = d3.forceSimulation(nodes)
+      .force('link', d3.forceLink(edges)
+        .id(d => d.id)
+        .distance(d => {
+          if (d.source.ecosystem === 'internal' || d.target.ecosystem === 'internal') return 110;
+          return 75;
+        })
+        .strength(0.4))
+      .force('charge', d3.forceManyBody().strength(-250))
+      .force('center', d3.forceCenter(width / 2, height / 2))
+      .force('collision', d3.forceCollide().radius(d => rScale(d.package_count) + 8))
+      .force('x', d3.forceX(width / 2).strength(0.03))
+      .force('y', d3.forceY(height / 2).strength(0.03));
+
+    // -------------------------------------------------------------------------
+    // 7. Draw edges
+    // -------------------------------------------------------------------------
+    const linkGroup = root.append('g').attr('class', 'links');
+
+    const linkEl = linkGroup.selectAll('line')
+      .data(edges)
+      .join('line')
+        .attr('class', d => `link${d.is_circular ? ' circular' : ''}`)
+        .attr('marker-end', d => d.is_circular ? 'url(#arr-circular)' : 'url(#arr-normal)');
+
+    // -------------------------------------------------------------------------
+    // 8. Draw nodes
+    // -------------------------------------------------------------------------
+    const nodeGroup = root.append('g').attr('class', 'nodes');
+
+    const nodeEl = nodeGroup.selectAll('g.node')
+      .data(nodes)
+      .join('g')
+        .attr('class', 'node')
+        .attr('data-id', d => d.id)
+        .call(drag(simulation));
+
+    nodeEl.append('circle')
+      .attr('r', d => rScale(d.package_count))
+      .attr('fill', d => ecoColor(d.ecosystem))
+      .attr('fill-opacity', 0.85)
+      .attr('stroke', d => d3.color(ecoColor(d.ecosystem)).darker(0.5))
+      .attr('stroke-width', 1.5);
+
+    nodeEl.append('text')
+      .attr('dy', d => rScale(d.package_count) + 11)
+      .attr('font-size', d => {
+        const r = rScale(d.package_count);
+        return r > 12 ? '10px' : '9px';
+      })
+      .text(d => {
+        const name = d.label || d.id;
+        const max  = 18;
+        return name.length > max ? name.slice(0, max - 1) + '…' : name;
+      });
+
+    // -------------------------------------------------------------------------
+    // 9. Simulation tick
+    // -------------------------------------------------------------------------
+    simulation.on('tick', () => {
+      linkEl
+        .attr('x1', d => d.source.x)
+        .attr('y1', d => d.source.y)
+        .attr('x2', d => {
+          const dx  = d.target.x - d.source.x;
+          const dy  = d.target.y - d.source.y;
+          const len = Math.sqrt(dx * dx + dy * dy) || 1;
+          const r   = rScale(d.target.package_count);
+          return d.target.x - (dx / len) * (r + 6);
+        })
+        .attr('y2', d => {
+          const dx  = d.target.x - d.source.x;
+          const dy  = d.target.y - d.source.y;
+          const len = Math.sqrt(dx * dx + dy * dy) || 1;
+          const r   = rScale(d.target.package_count);
+          return d.target.y - (dy / len) * (r + 6);
+        });
+
+      nodeEl.attr('transform', d => `translate(${d.x},${d.y})`);
+    });
+
+    // -------------------------------------------------------------------------
+    // 10. Drag behaviour
+    // -------------------------------------------------------------------------
+    function drag(sim) {
+      return d3.drag()
+        .on('start', (event, d) => {
+          if (!event.active) sim.alphaTarget(0.3).restart();
+          d.fx = d.x;
+          d.fy = d.y;
+        })
+        .on('drag', (event, d) => {
+          d.fx = event.x;
+          d.fy = event.y;
+        })
+        .on('end', (event, d) => {
+          if (!event.active) sim.alphaTarget(0);
+          d.fx = null;
+          d.fy = null;
+        });
+    }
+
+    // -------------------------------------------------------------------------
+    // 11. Tooltip
+    // -------------------------------------------------------------------------
+    const tooltip = document.getElementById('tooltip');
+
+    nodeEl
+      .on('mouseenter', (event, d) => {
+        const deps   = (outEdgeMap.get(d.id) || []).length;
+        const depnds = (inEdgeMap.get(d.id)  || []).length;
+        tooltip.innerHTML = `
+          <strong>${d.label || d.id}</strong>
+          <span class="eco-badge" style="${ecoStyle(d.ecosystem)}">${d.ecosystem}</span>
+          <span>Dependencies: ${deps}</span><br/>
+          <span>Dependents: ${depnds}</span>
+        `;
+        tooltip.classList.add('visible');
+        moveTooltip(event);
+      })
+      .on('mousemove', moveTooltip)
+      .on('mouseleave', () => {
+        tooltip.classList.remove('visible');
+      });
+
+    function moveTooltip(event) {
+      const pad = 14;
+      let x = event.clientX + pad;
+      let y = event.clientY + pad;
+      const tw = tooltip.offsetWidth  || 180;
+      const th = tooltip.offsetHeight || 80;
+      if (x + tw > window.innerWidth)  x = event.clientX - tw - pad;
+      if (y + th > window.innerHeight) y = event.clientY - th - pad;
+      tooltip.style.left = x + 'px';
+      tooltip.style.top  = y + 'px';
+    }
+
+    // -------------------------------------------------------------------------
+    // 12. Node click → side panel + highlight
+    // -------------------------------------------------------------------------
+    let selectedId = null;
+
+    nodeEl.on('click', (event, d) => {
+      event.stopPropagation();
+      if (selectedId === d.id) {
+        clearSelection();
+        return;
+      }
+      selectNode(d);
+    });
+
+    svg.on('click', () => clearSelection());
+
+    function selectNode(d) {
+      selectedId = d.id;
+
+      const outs = new Set(outEdgeMap.get(d.id) || []);
+      const ins  = new Set(inEdgeMap.get(d.id)  || []);
+      const connected = new Set([d.id, ...outs, ...ins]);
+
+      nodeEl
+        .classed('selected', nd => nd.id === d.id)
+        .classed('dimmed',   nd => !connected.has(nd.id));
+
+      linkEl
+        .classed('highlighted', ed => {
+          const s = typeof ed.source === 'object' ? ed.source.id : ed.source;
+          const t = typeof ed.target === 'object' ? ed.target.id : ed.target;
+          return s === d.id || t === d.id;
+        })
+        .attr('marker-end', ed => {
+          const s = typeof ed.source === 'object' ? ed.source.id : ed.source;
+          const t = typeof ed.target === 'object' ? ed.target.id : ed.target;
+          if (s === d.id || t === d.id) return 'url(#arr-highlighted)';
+          return ed.is_circular ? 'url(#arr-circular)' : 'url(#arr-normal)';
+        });
+
+      const circOuts = new Set(
+        edges
+          .filter(e => {
+            const s = typeof e.source === 'object' ? e.source.id : e.source;
+            return s === d.id && e.is_circular;
+          })
+          .map(e => typeof e.target === 'object' ? e.target.id : e.target)
+      );
+
+      document.getElementById('panel-node-name').textContent = d.label || d.id;
+      const ecoSpan = document.getElementById('panel-eco');
+      ecoSpan.textContent = d.ecosystem;
+      ecoSpan.setAttribute('style', ecoStyle(d.ecosystem));
+
+      const depList = document.getElementById('panel-deps');
+      depList.innerHTML = '';
+      const outList = outEdgeMap.get(d.id) || [];
+      if (outList.length === 0) {
+        depList.innerHTML = '<span class="empty-label">None</span>';
+      } else {
+        outList.forEach(depId => {
+          const li = document.createElement('li');
+          li.textContent = depId;
+          if (circOuts.has(depId)) li.classList.add('circular-dep');
+          li.addEventListener('click', () => {
+            const target = nodes.find(n => n.id === depId);
+            if (target) selectNode(target);
+          });
+          depList.appendChild(li);
+        });
+      }
+
+      const dependentList = document.getElementById('panel-dependents');
+      dependentList.innerHTML = '';
+      const inList = inEdgeMap.get(d.id) || [];
+      if (inList.length === 0) {
+        dependentList.innerHTML = '<span class="empty-label">None</span>';
+      } else {
+        inList.forEach(depId => {
+          const li = document.createElement('li');
+          li.textContent = depId;
+          li.addEventListener('click', () => {
+            const target = nodes.find(n => n.id === depId);
+            if (target) selectNode(target);
+          });
+          dependentList.appendChild(li);
+        });
+      }
+
+      document.getElementById('side-panel').classList.add('visible');
+      tooltip.classList.remove('visible');
+    }
+
+    function clearSelection() {
+      selectedId = null;
+      nodeEl.classed('selected', false).classed('dimmed', false);
+      linkEl
+        .classed('highlighted', false)
+        .attr('marker-end', d => d.is_circular ? 'url(#arr-circular)' : 'url(#arr-normal)');
+      document.getElementById('side-panel').classList.remove('visible');
+    }
+
+    document.getElementById('close-panel').addEventListener('click', clearSelection);
+
+    // -------------------------------------------------------------------------
+    // 13. Initial zoom-to-fit after simulation settles
+    // -------------------------------------------------------------------------
+    function resetView() {
+      const bounds  = root.node().getBBox();
+      if (!bounds.width || !bounds.height) return;
+      const pad     = 60;
+      const scaleX  = (width  - pad * 2) / bounds.width;
+      const scaleY  = (height - pad * 2) / bounds.height;
+      const scale   = Math.min(scaleX, scaleY, 1);
+      const tx      = (width  - bounds.width  * scale) / 2 - bounds.x * scale;
+      const ty      = (height - bounds.height * scale) / 2 - bounds.y * scale;
+      svg.transition().duration(600).call(
+        zoomBehavior.transform,
+        d3.zoomIdentity.translate(tx, ty).scale(scale)
+      );
+    }
+
+    let tickCount = 0;
+    const totalTicks = nodes.length > 200 ? 100 : 200;
+    simulation.on('end', resetView);
+    const tickTimer = d3.interval(() => {
+      tickCount++;
+      if (tickCount >= totalTicks) {
+        tickTimer.stop();
+        resetView();
+      }
+    }, 20);
+
+    // -------------------------------------------------------------------------
+    // 14. Window resize
+    // -------------------------------------------------------------------------
+    window.addEventListener('resize', () => {
+      const w = svgEl.clientWidth;
+      const h = svgEl.clientHeight;
+      simulation
+        .force('center', d3.forceCenter(w / 2, h / 2))
+        .force('x', d3.forceX(w / 2).strength(0.03))
+        .force('y', d3.forceY(h / 2).strength(0.03))
+        .alpha(0.3)
+        .restart();
+    });
+
+  })();
+  </script>
+
+</body>
+</html>
